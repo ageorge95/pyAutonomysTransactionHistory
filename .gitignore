@@ -1,0 +1,10 @@
+/.idea
+*.pyc
+/venv
+/activate.bat
+/build
+/dist
+/session_state.json
+/.__runtime_log.lock
+/runtime_log.log
+/settings.json
