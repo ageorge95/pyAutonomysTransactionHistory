@@ -98,6 +98,14 @@ The app uses Subscan's v2 API endpoints:
 
 Rate limiting is handled with 650 ms sleeps between pages and exponential-backoff retries on 429/403 responses. The free Subscan tier caps responses at 25 rows per page.
 
+## Support
+
+If this tool is useful to you, consider sending a donation:
+
+```
+sucwGpB53pZpaWK6xeJUCqYoxwYfnE1r8Qr4ChbAJcLJQPosB
+```
+
 ## License
 
 MIT
