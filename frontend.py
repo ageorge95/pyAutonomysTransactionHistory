@@ -4,7 +4,7 @@ import sys
 import time
 from logging import getLogger
 from PySide6.QtCore import (
-    Qt, Slot, QAbstractTableModel, QSortFilterProxyModel, QTimer,
+    Qt, Slot, QAbstractTableModel, QSortFilterProxyModel, QTimer, QDate,
 )
 from PySide6.QtGui import QIcon, QColor, QFont
 from PySide6.QtWidgets import (
@@ -12,7 +12,7 @@ from PySide6.QtWidgets import (
     QLineEdit, QPushButton, QComboBox, QSpinBox, QCheckBox,
     QProgressBar, QFileDialog, QMessageBox, QTableView,
     QHeaderView, QPlainTextEdit, QSplitter, QGroupBox, QGridLayout,
-    QSizePolicy, QFrame, QAbstractSpinBox,
+    QSizePolicy, QFrame, QAbstractSpinBox, QDateEdit,
 )
 from backend import (
     ScanWorker, SubscanV2, format_tokens, DEFAULT_BASE_URL, DECIMAL_PLACES, SSC,
@@ -305,6 +305,7 @@ class MainWindow(QMainWindow):
         self.mode_combo = QComboBox()
         self.mode_combo.addItem("Last N days", "days")
         self.mode_combo.addItem("Block range", "range")
+        self.mode_combo.addItem("Date range", "dates")
         self.mode_combo.addItem("Entire history", "all")
         self.mode_combo.currentIndexChanged.connect(self._on_mode_changed)
         settings_layout.addWidget(self.mode_combo, 2, 1)
@@ -338,11 +339,37 @@ class MainWindow(QMainWindow):
         range_layout.addStretch()
         settings_layout.addLayout(range_layout, 4, 1)
 
+        # --- Date range ---
+        self.date_start_label = QLabel("From date:")
+        settings_layout.addWidget(self.date_start_label, 5, 0)
+        date_layout = QHBoxLayout()
+        self.start_date_edit = QDateEdit()
+        self.start_date_edit.setCalendarPopup(True)
+        self.start_date_edit.setDisplayFormat("yyyy-MM-dd")
+        self.start_date_edit.setDate(QDate.currentDate().addDays(-7))
+        date_layout.addWidget(self.start_date_edit)
+
+        self.date_end_label = QLabel("  to:")
+        date_layout.addWidget(self.date_end_label)
+        self.end_date_edit = QDateEdit()
+        self.end_date_edit.setCalendarPopup(True)
+        self.end_date_edit.setDisplayFormat("yyyy-MM-dd")
+        self.end_date_edit.setDate(QDate.currentDate())
+        date_layout.addWidget(self.end_date_edit)
+        date_layout.addStretch()
+        settings_layout.addLayout(date_layout, 5, 1)
+
         # Hide range by default
         self.range_start_label.setVisible(False)
         self.block_start_spin.setVisible(False)
         self.range_end_label.setVisible(False)
         self.block_end_spin.setVisible(False)
+
+        # Hide date range by default
+        self.date_start_label.setVisible(False)
+        self.start_date_edit.setVisible(False)
+        self.date_end_label.setVisible(False)
+        self.end_date_edit.setVisible(False)
 
         main_layout.addWidget(settings_group)
 
@@ -494,6 +521,7 @@ class MainWindow(QMainWindow):
         mode = self.mode_combo.currentData()
         is_days = (mode == "days")
         is_range = (mode == "range")
+        is_dates = (mode == "dates")
 
         self.days_label.setVisible(is_days)
         self.days_spin.setVisible(is_days)
@@ -502,6 +530,11 @@ class MainWindow(QMainWindow):
         self.block_start_spin.setVisible(is_range)
         self.range_end_label.setVisible(is_range)
         self.block_end_spin.setVisible(is_range)
+
+        self.date_start_label.setVisible(is_dates)
+        self.start_date_edit.setVisible(is_dates)
+        self.date_end_label.setVisible(is_dates)
+        self.end_date_edit.setVisible(is_dates)
 
     # ------------------------------------------------------------------
     # Scan
@@ -545,6 +578,9 @@ class MainWindow(QMainWindow):
             # We'll use the lookup via Subscan metadata at scan time
             # For now, start_block is computed in the worker
             start_block = None
+        elif mode == "dates":
+            end_block = 0  # will be resolved after metadata
+            start_block = None
         elif mode == "range":
             sb = self.block_start_spin.value()
             eb = self.block_end_spin.value()
@@ -578,27 +614,44 @@ class MainWindow(QMainWindow):
         self._worker.fatal_error.connect(self._on_fatal_error)
         self._worker.scan_finished.connect(self._on_finished)
 
-        # If days mode, resolve block range first
+        # If days or dates mode, resolve block range first
         if mode == "days":
-            self._resolve_days_and_start(api_key, address, types,
-                                         self.days_spin.value(),
-                                         start_block, end_block)
+            self._resolve_and_start(api_key, address, types,
+                                    mode="days",
+                                    days=self.days_spin.value())
+        elif mode == "dates":
+            self._resolve_and_start(api_key, address, types,
+                                    mode="dates",
+                                    start_date=self.start_date_edit.date(),
+                                    end_date=self.end_date_edit.date())
         else:
             self._worker.start()
 
-    def _resolve_days_and_start(self, api_key, address, types, days,
-                                 start_block, end_block):
-        """Fetch latest block, compute start from days, then launch worker."""
+    def _resolve_and_start(self, api_key, address, types, mode,
+                            days=0, start_date=None, end_date=None):
+        """Fetch latest block, compute block range, then launch worker."""
         try:
             api = SubscanV2(DEFAULT_BASE_URL, api_key)
             meta = api.metadata()
             latest = int(meta.get("blockNum", 0))
-            # avgBlockTime ~6.4s → ~13,500 blocks/day
-            start = max(1, latest - days * 13_500)
+
+            if mode == "days":
+                start = max(1, latest - days * 13_500)
+                end = latest
+                self._log.info(f"Resolved blocks: {start} -> {end} (last {days} days)")
+            elif mode == "dates":
+                today = QDate.currentDate()
+                days_ago_start = start_date.daysTo(today)
+                days_ago_end = end_date.daysTo(today)
+                start = max(1, latest - days_ago_start * 13_500)
+                end = max(1, latest - days_ago_end * 13_500)
+                self._log.info(
+                    f"Resolved blocks: {start} -> {end} "
+                    f"({start_date.toString('yyyy-MM-dd')} to {end_date.toString('yyyy-MM-dd')})"
+                )
 
             self._worker._start_block = start
-            self._worker._end_block = latest
-            self._log.info(f"Resolved blocks: {start} -> {latest} (last {days} days)")
+            self._worker._end_block = end
             self._worker.start()
         except Exception as exc:
             self._on_fatal_error(f"Failed to resolve block range: {exc}")
@@ -724,6 +777,8 @@ class MainWindow(QMainWindow):
         self.days_spin.setEnabled(not running)
         self.block_start_spin.setEnabled(not running)
         self.block_end_spin.setEnabled(not running)
+        self.start_date_edit.setEnabled(not running)
+        self.end_date_edit.setEnabled(not running)
         self.chk_rewards.setEnabled(not running)
         self.chk_fees.setEnabled(not running)
         self.chk_transfers.setEnabled(not running)
@@ -753,6 +808,8 @@ class MainWindow(QMainWindow):
                 "days": self.days_spin.value(),
                 "block_start": self.block_start_spin.value(),
                 "block_end": self.block_end_spin.value(),
+                "date_start": self.start_date_edit.date().toString("yyyy-MM-dd"),
+                "date_end": self.end_date_edit.date().toString("yyyy-MM-dd"),
                 "rewards": self.chk_rewards.isChecked(),
                 "fees": self.chk_fees.isChecked(),
                 "transfers": self.chk_transfers.isChecked(),
@@ -782,6 +839,12 @@ class MainWindow(QMainWindow):
             self.days_spin.setValue(s.get("days", 7))
             self.block_start_spin.setValue(s.get("block_start", 0))
             self.block_end_spin.setValue(s.get("block_end", 0))
+            date_start = s.get("date_start", "")
+            if date_start:
+                self.start_date_edit.setDate(QDate.fromString(date_start, "yyyy-MM-dd"))
+            date_end = s.get("date_end", "")
+            if date_end:
+                self.end_date_edit.setDate(QDate.fromString(date_end, "yyyy-MM-dd"))
             self.chk_rewards.setChecked(s.get("rewards", True))
             self.chk_fees.setChecked(s.get("fees", True))
             self.chk_transfers.setChecked(s.get("transfers", True))
