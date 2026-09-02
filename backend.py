@@ -65,7 +65,10 @@ class SubscanV2:
         body: dict = {"address": address, "direction": "all", "row": 25}
         if start_block and end_block:
             body["block_range"] = f"{start_block}-{end_block}"
-        return self._paginate_v2("/api/v2/scan/transfers", body, "transfers")
+        return self._paginate_v2(
+            "/api/v2/scan/transfers", body, "transfers",
+            cursor_field="transfer_id", after_id_list=True,
+        )
 
     def fetch_event_params_batch(self, event_indices: list[str]) -> dict[str, list[dict]]:
         data = self._post("/api/scan/event/params", {"event_index": event_indices})
@@ -77,20 +80,29 @@ class SubscanV2:
         return result
 
     def _paginate_v2(self, path: str, body: dict, list_key: str,
+                     cursor_field: str = "id", after_id_list: bool = False,
                      max_pages: int = 500) -> list[dict]:
         body = dict(body)
-        body.setdefault("page", 0)
+        body.setdefault("order", "asc")
         all_rows: list[dict] = []
+        cursor = None
         for _ in range(max_pages):
             time.sleep(RATE_LIMIT_SLEEP)
-            data = self._post(path, body)
+            req = dict(body)
+            if cursor is not None:
+                req["after_id"] = [cursor] if after_id_list else cursor
+            else:
+                req.setdefault("page", 0)
+            data = self._post(path, req)
             rows = data.get(list_key, [])
             if not rows:
                 break
             all_rows.extend(rows)
             if len(rows) < body["row"]:
                 break
-            body["page"] += 1
+            cursor = rows[-1].get(cursor_field)
+            if cursor is None:
+                break
         return all_rows
 
 # ---------------------------------------------------------------------------
