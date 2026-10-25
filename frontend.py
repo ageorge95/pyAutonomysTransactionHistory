@@ -28,10 +28,12 @@ COLORS = {
 _COLUMNS = ["Block", "Type", "Sub", "Amount", "Counterparty"]
 _COL_KEYS = ["block", "type", "sub", "amount", "counterparty"]
 
+ICON_FILE = 'icon.ico'
+
 def get_running_path(relative_path):
-    if "_internal" in os.listdir():
-        return os.path.join("_internal", relative_path)
-    return relative_path
+    """Return a bundled file's path in both source and PyInstaller builds."""
+    base_path = getattr(sys, '_MEIPASS', os.path.dirname(os.path.abspath(__file__)))
+    return os.path.join(base_path, relative_path)
 
 # ---------------------------------------------------------------------------
 # Table model
@@ -271,7 +273,7 @@ class MainWindow(QMainWindow):
     def _build_ui(self):
         self.setWindowTitle("Autonomys Transaction History v" +
                             open(get_running_path("version.txt")).read().strip())
-        self.setWindowIcon(QIcon(get_running_path("icon.ico")))
+        self.setWindowIcon(QIcon(get_running_path(ICON_FILE)))
         self.setMinimumSize(900, 700)
         self.resize(1100, 850)
 

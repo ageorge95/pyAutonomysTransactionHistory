@@ -8,3 +8,5 @@
 /.__runtime_log.lock
 /runtime_log.log
 /settings.json
+/activate.ps1
+/activate.sh

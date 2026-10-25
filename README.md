@@ -31,10 +31,11 @@ Windows desktop utility (PySide6) for querying on-chain transaction and farming 
 ### Option A: Use the provided installer script
 
 ```powershell
-.\Install.bat
+powershell -ExecutionPolicy Bypass -File .\_install\install.ps1
 ```
 
-This creates `venv`, links `activate.bat`, upgrades `pip`, and installs requirements.
+This creates `venv`, sets up `activate.bat` / `activate.ps1`, copies `pip.ini`, installs `pip` / `uv`,
+and installs the requirements.
 
 ### Option B: Manual setup
 
@@ -48,7 +49,7 @@ python -m pip install -r requirements.txt
 ## Run from source
 
 ```powershell
-.\venv\Scripts\Activate.ps1
+.\activate.ps1
 python .\main.py
 ```
 
